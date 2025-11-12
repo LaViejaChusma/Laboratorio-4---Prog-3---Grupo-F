@@ -1,1 +1,207 @@
+import threading
+import time
+import logging
+from pathlib import Path
+import re
+import sys
+import sympy as sp
+from sympy import symbols, sympify, diff, integrate, simplify
+from sympy.parsing.sympy_parser import parse_expr
 
+# Archivos
+DEMANDA = Path("demanda.txt")
+OUT_INTEGRALES = Path("integrales.txt")
+OUT_DERIVADAS = Path("derivadas.txt")
+OUT_TESIS = Path("tesis.txt")
+OUT_LARGO = Path("largo.txt")
+
+# Límite de hilos concurrentes
+MAX_CONCURRENT = 4
+
+# Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(threadName)s] %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+# Clase BaseDeDatos
+class BaseDeDatos:
+    def __init__(self, max_concurrent: int):
+        self.sem = threading.Semaphore(max_concurrent)
+        # Locks para archivos
+        self.lock_integrales = threading.Lock()
+        self.lock_derivadas = threading.Lock()
+        self.lock_tesis = threading.Lock()
+        self.lock_largo = threading.Lock()
+        # Asegurar existencia de archivos
+        for p in (OUT_INTEGRALES, OUT_DERIVADAS, OUT_TESIS, OUT_LARGO):
+            if not p.exists():
+                p.write_text("", encoding="utf-8")
+
+def tokenizar(texto: str):
+    return re.findall(r"[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ0-9']+", texto.lower())
+
+def contar_palabras(texto: str) -> int:
+    return len(tokenizar(texto))
+
+# Tareas 
+def procesar_integral(expr_txt: str):
+    x = sp.symbols('x')
+    try:
+        expr_txt = expr_txt.replace("^", "**")  # para aceptar potencias
+        expr = parse_expr(expr_txt, evaluate=True)
+        integral = sp.integrate(expr, x)
+        return True, str(simplify(integral)), ""
+    except Exception as e:
+        return False, None, str(e)
+
+def procesar_derivada(expr_txt: str):
+    x = sp.symbols('x')
+    try:
+        expr_txt = expr_txt.replace("^", "**") 
+        expr = parse_expr(expr_txt, evaluate=True)
+        deriv = sp.diff(expr, x)
+        return True, str(simplify(deriv)), ""
+    except Exception as e:
+        return False, None, str(e)
+
+def procesar_tesis_content(texto: str):
+    return contar_palabras(texto)
+
+def procesar_tesis(bd: BaseDeDatos, contenido: str, start: float):
+    if contenido.startswith("FILE:"):
+        ruta = Path(contenido[5:].strip())
+        try:
+            texto = ruta.read_text(encoding="utf-8", errors="ignore")
+        except Exception as e:
+            logging.error(f"No pude leer la tesis desde archivo {ruta}: {e}")
+            texto = f"[ERROR leyendo {ruta} : {e}]"
+    else:
+        texto = contenido
+
+    n_palabras = procesar_tesis_content(texto)
+    dt = time.time() - start
+
+    with bd.lock_tesis:
+        tesis_existentes = set(OUT_TESIS.read_text(encoding="utf-8").splitlines())
+        if texto.strip() not in tesis_existentes:
+            with OUT_TESIS.open("a", encoding="utf-8") as f:
+                f.write("\nTESIS AGREGADA:\n" + texto.strip() + "\n")
+        else:
+            logging.info("Tesis duplicada detectada, no se agrega nuevamente.")
+
+    # Actualizar contador de palabras total
+    with bd.lock_largo:
+        try:
+            cur_val = int(OUT_LARGO.read_text(encoding="utf-8").strip() or "0")
+        except ValueError:
+            cur_val = 0
+        nuevo = cur_val + n_palabras
+        OUT_LARGO.write_text(str(nuevo) + "\n", encoding="utf-8")
+
+    logging.info(f"Tesis procesada (palabras={n_palabras}, total acumulado={nuevo}, t={dt:.6f}s)")
+
+# Worker que procesa una tarea individual
+def procesar_tarea(bd: BaseDeDatos, tarea_tipo: str, contenido: str):
+    start = time.time()
+    logging.info(f"Comenzando tarea: {tarea_tipo} , contenido: {contenido[:60]}{'...' if len(contenido)>60 else ''}")
+    bd.sem.acquire()
+    try:
+        if tarea_tipo == "INTEGRAL":
+            ok, res, err = procesar_integral(contenido)
+            dt = time.time() - start
+            if ok:
+                linea = f"∫({contenido}) dx = {res}  # tiempo: {dt:.6f}s\n"
+            else:
+                linea = f"ERROR ∫({contenido}) -> {err}\n"
+
+            with bd.lock_integrales:
+                with OUT_INTEGRALES.open("a", encoding="utf-8") as f:
+                    f.write(linea)
+            logging.info(f"Integral procesada (ok={ok}, t={dt:.6f}s)")
+
+        elif tarea_tipo == "DERIVADA":
+            ok, res, err = procesar_derivada(contenido)
+            dt = time.time() - start
+            if ok:
+                linea = f"d/dx({contenido}) = {res}  # tiempo: {dt:.6f}s\n"
+            else:
+                linea = f"ERROR d/dx({contenido}) -> {err}\n"
+
+            with bd.lock_derivadas:
+                with OUT_DERIVADAS.open("a", encoding="utf-8") as f:
+                    f.write(linea)
+            logging.info(f"Derivada procesada (ok={ok}, t={dt:.6f}s)")
+
+        elif tarea_tipo == "TESIS":
+            procesar_tesis(bd, contenido, start)
+
+        else:
+            logging.warning(f"Tipo de tarea desconocido: {tarea_tipo}")
+
+    finally:
+        bd.sem.release()
+
+# Lectura de demanda
+def leer_demanda(path: Path):
+    tareas = []
+    if not path.exists():
+        raise FileNotFoundError(f"No encontré {path.resolve()}")
+
+    with path.open("r", encoding="utf-8", errors="ignore") as f:
+        for ln in f:
+            ln = ln.strip()
+            if not ln or ln.startswith("#"):
+                continue
+
+            # Detectar separador: puede ser "|" o espacio
+            if "|" in ln:
+                tipo, contenido = ln.split("|", 1)
+            else:
+                partes = ln.split(maxsplit=1)
+                if len(partes) != 2:
+                    logging.warning(f"Línea ignorada (formato inválido): {ln}")
+                    continue
+                tipo, contenido = partes
+
+            tipo = tipo.strip().upper()
+            contenido = contenido.strip()
+            tareas.append((tipo, contenido))
+
+    return tareas
+
+# Procesamiento de lista de tareas (con hilos)
+def procesar_tareas_concurrentes(tareas, max_concurrent=MAX_CONCURRENT):
+    bd = BaseDeDatos(max_concurrent)
+    hilos = []
+    for i, (tipo, contenido) in enumerate(tareas, start=1):
+        t = threading.Thread(target=procesar_tarea, args=(bd, tipo, contenido), name=f"Worker-{i}", daemon=False)
+        t.start()
+        hilos.append(t)
+    for t in hilos:
+        t.join()
+
+def main():
+    logging.info("Inicio del procesador concurrente")
+    OUT_LARGO.write_text("0\n", encoding="utf-8")  # Reiniciar contador de palabras
+
+    try:
+        tareas = leer_demanda(DEMANDA)
+    except Exception as e:
+        logging.error(f"Error leyendo demanda: {e}")
+        sys.exit(1)
+
+    logging.info(f"Total tareas leídas: {len(tareas)}")
+    t0 = time.time()
+    procesar_tareas_concurrentes(tareas, max_concurrent=MAX_CONCURRENT)
+    dt = time.time() - t0
+    total_palabras = int(OUT_LARGO.read_text(encoding="utf-8").strip() or "0")
+    logging.info(f"Total de palabras procesadas en tesis: {total_palabras}")
+    logging.info(f"Procesamiento finalizado en {dt:.6f}s")
+    logging.info(f"Archivos generados: {OUT_INTEGRALES.resolve()}, {OUT_DERIVADAS.resolve()}, {OUT_TESIS.resolve()}, {OUT_LARGO.resolve()}")
+    total_palabras = int(OUT_LARGO.read_text(encoding="utf-8").strip() or "0")
+    logging.info(f"Total de palabras procesadas en tesis: {total_palabras}")
+
+if __name__ == "__main__":
+    main()
