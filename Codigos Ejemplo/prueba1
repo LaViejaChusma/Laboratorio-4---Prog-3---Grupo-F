@@ -199,8 +199,6 @@ def main():
     logging.info(f"Total de palabras procesadas en tesis: {total_palabras}")
     logging.info(f"Procesamiento finalizado en {dt:.6f}s")
     logging.info(f"Archivos generados: {OUT_INTEGRALES.resolve()}, {OUT_DERIVADAS.resolve()}, {OUT_TESIS.resolve()}, {OUT_LARGO.resolve()}")
-    total_palabras = int(OUT_LARGO.read_text(encoding="utf-8").strip() or "0")
-    logging.info(f"Total de palabras procesadas en tesis: {total_palabras}")
 
 if __name__ == "__main__":
     main()
