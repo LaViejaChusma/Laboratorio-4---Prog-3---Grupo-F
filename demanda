@@ -7,7 +7,7 @@ INTEGRAL exp(a*x-1)/a
 DERIVADA sin(x)^2
 DERIVADA exp(a*x-1)/a
 DERIVADA sin(a*x+b)
-TESIS Fundamentación y diseño de un modelo de intervención socio-educativo desde una perspectiva constructivista, para su aplicación en organizaciones productivas o de servicios. Estudio de su aplicación y observación de su impacto en una empresa
+TESIS Fundamentación y diseño de un modelo de intervención socioeducativo desde una perspectiva constructivista, para su aplicación en organizaciones productivas o de servicios. Estudio de su aplicación y observación de su impacto en una empresa
 DERIVADA 0^2
 DERIVADA 1*x
 INTEGRAL sec(x)^5
