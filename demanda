@@ -1,0 +1,17 @@
+DERIVADA exp(a/x)
+DERIVADA log(4*x)
+INTEGRAL log(4*x)
+TESIS Simulación y control de un robot cuadrúpedo multiservicio en entornos regulares utilizando Robot Operating System 
+TESIS Diseño de prótesis de brazo basado en la clasificación de señales mioeléctricas mediante inteligencia artificial 
+INTEGRAL exp(a*x-1)/a
+DERIVADA sin(x)^2
+DERIVADA exp(a*x-1)/a
+DERIVADA sin(a*x+b)
+TESIS Fundamentación y diseño de un modelo de intervención socio-educativo desde una perspectiva constructivista, para su aplicación en organizaciones productivas o de servicios. Estudio de su aplicación y observación de su impacto en una empresa
+DERIVADA 0^2
+DERIVADA 1*x
+INTEGRAL sec(x)^5
+TESIS Diseño de un equipo de ultrasonido para conservación de alimentos 
+DERIVADA sec(x)^5
+TESIS Diseño e implementación de sistema de conversión de vehículo de combustión a eléctrico, además del monitoreo de variables físicas para optimización del uso de la batería 
+
