@@ -159,7 +159,7 @@ def procesar_tarea(bd: BaseDeDatos, tarea_tipo: str, contenido: str):
             ok, res, err = procesar_integral(contenido)
             dt = time.time() - start
             if ok:
-                linea = f"∫({contenido}) dx = {res} + C\n"
+                linea = f"∫({contenido}) dx = {res}\n"
             else:
                 linea = f"ERROR ∫({contenido}) -> {err}\n"
 
