@@ -73,42 +73,42 @@ def procesar_derivada(expr_txt: str):
     except Exception as e:
         return False, None, str(e)
 
-def procesar_tesis_content(texto: str):
-    return contar_palabras(texto)
-
 def procesar_tesis(bd: BaseDeDatos, contenido: str, start: float):
     if contenido.startswith("FILE:"):
         ruta = Path(contenido[5:].strip())
         try:
-            texto = ruta.read_text(encoding="utf-8", errors="ignore")
+            texto = ruta.read_text(encoding="utf-8", errors="ignore").strip()
         except Exception as e:
             logging.error(f"No se puede leer la tesis desde archivo {ruta}: {e}")
             texto = f"[ERROR leyendo {ruta} : {e}]"
     else:
-        texto = contenido
+        texto = contenido.strip()
 
-    n_palabras = procesar_tesis_content(texto)
-    dt = time.time() - start
-
+    # Registrar tesis si no es duplicada
     with bd.lock_tesis:
-        if texto.strip() not in bd.tesis_existentes:
+        if texto not in bd.tesis_existentes:
+            bd.tesis_existentes.add(texto)
             with OUT_TESIS.open("a", encoding="utf-8") as f:
-                f.write("\nTESIS AGREGADA:\n" + texto.strip() + "\n")
-            bd.tesis_existentes.add(texto.strip())
+                f.write("\nTESIS AGREGADA:\n" + texto + "\n")
+            
+            # Conteo de palabras solo si no es duplicada
+            n_palabras = contar_palabras(texto)
 
+            # Actualizar contador de palabras total
+            with bd.lock_largo:
+                try:
+                    cur_val = int(OUT_LARGO.read_text(encoding="utf-8").strip() or "0")
+                except ValueError:
+                    cur_val = 0
+                nuevo_total = cur_val + n_palabras
+                OUT_LARGO.write_text(str(nuevo_total) + "\n", encoding="utf-8")
         else:
             logging.info("Tesis duplicada, no se agrega nuevamente.")
+            n_palabras = 0
+            nuevo_total = None
+            
+    return n_palabras, nuevo_total
 
-    # Actualizar contador de palabras total
-    with bd.lock_largo:
-        try:
-            cur_val = int(OUT_LARGO.read_text(encoding="utf-8").strip() or "0")
-        except ValueError:
-            cur_val = 0
-        nuevo = cur_val + n_palabras
-        OUT_LARGO.write_text(str(nuevo) + "\n", encoding="utf-8")
-
-    logging.info(f"Tesis procesada (palabras = {n_palabras}, total acumulado = {nuevo}, t = {dt:.6f}s)")
 
 def registrar_tiempo(bd: BaseDeDatos, tarea_tipo: str, contenido: str, inicio: float, fin: float):
     dt = fin - inicio
@@ -153,12 +153,12 @@ def procesar_tarea(bd: BaseDeDatos, tarea_tipo: str, contenido: str):
                 with OUT_DERIVADAS.open("a", encoding="utf-8") as f:
                     f.write(linea)
             logging.info(f"Derivada procesada (t = {dt:.6f}s)")
-
         elif tarea_tipo == "TESIS":
-            procesar_tesis(bd, contenido, start)
-
-        else:
-            logging.warning(f"Tipo de tarea desconocido: {tarea_tipo}")
+            n_palabras, nuevo_total = procesar_tesis(bd, contenido, start)
+            dt = time.time() - start
+            logging.info(
+                f"Tesis procesada (palabras = {n_palabras}, total = {nuevo_total}, t = {dt:.6f}s)"
+            )
 
         registrar_tiempo(bd, tarea_tipo, contenido, start, time.time())
 
@@ -177,21 +177,29 @@ def leer_demanda(path: Path):
             ln = ln.strip()
             if not ln or ln.startswith("#"):
                 continue
-
+            tipo = None
+            contenido = None
             # Detectar separador: puede ser "|" o espacio
             if "|" in ln:
                 tipo, contenido = ln.split("|", 1)
             else:
                 partes = ln.split(maxsplit=1)
-                if len(partes) != 2:
-                    logging.warning(f"Línea ignorada (formato inválido): {ln}")
-                    continue
-                tipo, contenido = partes
+                if len(partes) == 2:
+                    tipo, contenido = partes
+
+            if tipo is None or contenido is None:
+                logging.warning(f"Línea ignorada (Formato inválido/separador no encontrado): {ln[:70]}...")
+                continue
 
             tipo = tipo.strip().upper()
             contenido = contenido.strip()
-            tareas.append((tipo, contenido))
 
+            if not validar_tarea(tipo, contenido):
+                logging.warning(f"Línea ignorada (Tipo/Contenido inválido): TIPO='{tipo}' | CONTENIDO='{contenido[:50]}...'")
+                continue
+            
+            tareas.append((tipo, contenido))
+            
     return tareas
 
 # Procesamiento de lista de tareas (con hilos)
@@ -236,7 +244,7 @@ def main():
     logging.info(f"\nTotal de tareas procesadas correctamente: {tareas_ok}")
     logging.info(f"Total de palabras procesadas en tesis: {total_palabras}")
     logging.info(f"Procesamiento finalizado en {dt:.6f}s")
-    logging.info(f"Archivos generados: {OUT_INTEGRALES.resolve()}, {OUT_DERIVADAS.resolve()}, {OUT_TESIS.resolve()}, {OUT_LARGO.resolve()}, {OUT_TIEMPOS.resolve()}")
+    logging.info(f"Archivos generados: \n{OUT_INTEGRALES.resolve()}, \n{OUT_DERIVADAS.resolve()}, \n{OUT_TESIS.resolve()}, \n{OUT_LARGO.resolve()}, \n{OUT_TIEMPOS.resolve()}")
 
 if __name__ == "__main__":
     main()
