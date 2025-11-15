@@ -8,6 +8,37 @@ import sympy as sp
 from sympy import simplify
 from sympy.parsing.sympy_parser import parse_expr
 
+# Colores
+ESC = "\033["
+RESET = ESC + "0m"
+B = ESC + "36m"      # Cian para tiempos
+O = ESC + "1;32m"    # Verde claro para números
+R = ESC + "1;31m"
+GREY = "\x1b[37;20m" # Gris suave
+
+# Formatter Gris
+class GreyFormatter(logging.Formatter):
+    BASE_FMT = f"{GREY}%(asctime)s [%(threadName)s] %(message)s{RESET}"
+    DATE_FMT = "%Y-%m-%d %H:%M:%S"
+
+    def format(self, record):
+        formatter = logging.Formatter(self.BASE_FMT, datefmt=self.DATE_FMT)
+        return formatter.format(record)
+
+# Configurar logging (reemplaza basicConfig)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Limpiar handlers previos
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+
+# Nuevo handler con gris
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+ch.setFormatter(GreyFormatter())
+logger.addHandler(ch)
+
 # Archivos
 DEMANDA = Path("demanda.txt")
 OUT_INTEGRALES = Path("integrales.txt")
@@ -19,12 +50,7 @@ OUT_TIEMPOS = Path("tiempos.txt")
 # Límite de hilos concurrentes
 MAX_CONCURRENT = 4
 
-# Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(threadName)s] %(levelname)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+
 
 # Clase BaseDeDatos
 class BaseDeDatos:
@@ -132,32 +158,32 @@ def procesar_tarea(bd: BaseDeDatos, tarea_tipo: str, contenido: str):
             ok, res, err = procesar_integral(contenido)
             dt = time.time() - start
             if ok:
-                linea = f"∫({contenido}) dx = {res}\n"
+                linea = f"∫({contenido}) dx    =    {res}\n"
             else:
                 linea = f"ERROR ∫({contenido}) -> {err}\n"
 
             with bd.lock_integrales:
                 with OUT_INTEGRALES.open("a", encoding="utf-8") as f:
                     f.write(linea)
-            logging.info(f"Integral procesada (t = {dt:.6f}s)")
+            logging.info(f"{RESET}Integral procesada (t ={B} {dt:.6f}s{RESET})")
 
         elif tarea_tipo == "DERIVADA":
             ok, res, err = procesar_derivada(contenido)
             dt = time.time() - start
             if ok:
-                linea = f"d/dx({contenido}) = {res}\n"
+                linea = f"d/dx({contenido})    =    {res}\n"
             else:
                 linea = f"ERROR d/dx({contenido}) -> {err}\n"
 
             with bd.lock_derivadas:
                 with OUT_DERIVADAS.open("a", encoding="utf-8") as f:
                     f.write(linea)
-            logging.info(f"Derivada procesada (t = {dt:.6f}s)")
+            logging.info(f"{RESET}Derivada procesada (t =  {B} {dt:.6f}s{RESET})")
         elif tarea_tipo == "TESIS":
             n_palabras, nuevo_total = procesar_tesis(bd, contenido, start)
             dt = time.time() - start
             logging.info(
-                f"Tesis procesada (palabras = {n_palabras}, total = {nuevo_total}, t = {dt:.6f}s)"
+                f"{RESET}Tesis procesada (palabras ={O} {n_palabras}{RESET}, total = {O}{nuevo_total}{RESET}, t = {B} {dt:.6f}s{RESET})"      
             )
 
         registrar_tiempo(bd, tarea_tipo, contenido, start, time.time())
@@ -221,7 +247,7 @@ def procesar_tareas_concurrentes(tareas, max_concurrent=4):
 
 def main():
     logging.info("Inicio del procesador de tareas\n")
-    # Reinicia los archivos para que no solo se agreguen a los resultados anteriroes
+    # Reinicia los archivos para que no solo se agreguen a los resultados anterirores
     OUT_LARGO.write_text("0\n", encoding="utf-8")
     OUT_TESIS.write_text("", encoding="utf-8")
     OUT_TIEMPOS.write_text("", encoding="utf-8") 
@@ -231,7 +257,7 @@ def main():
     try:
         tareas = leer_demanda(DEMANDA)
     except Exception as e:
-        logging.error(f"Error leyendo demanda: {e}")
+        logging.error(f"{R}Error leyendo demanda: {e}")
         sys.exit(1)
 
     t0 = time.time()
@@ -240,11 +266,11 @@ def main():
     
     total_palabras = int(OUT_LARGO.read_text(encoding="utf-8").strip() or "0")
     
-    logging.info(f"\nFin del procesador de tareas\n")
-    logging.info(f"\nTotal de tareas procesadas correctamente: {tareas_ok}")
-    logging.info(f"Total de palabras procesadas en tesis: {total_palabras}")
-    logging.info(f"Procesamiento finalizado en {dt:.6f}s")
-    logging.info(f"Archivos generados: \n{OUT_INTEGRALES.resolve()}, \n{OUT_DERIVADAS.resolve()}, \n{OUT_TESIS.resolve()}, \n{OUT_LARGO.resolve()}, \n{OUT_TIEMPOS.resolve()}")
+    logging.info(f"\n{RESET}Fin del procesador de tareas\n")
+    logging.info(f"\n{RESET}Total de tareas procesadas correctamente: {O}{tareas_ok}{RESET}")
+    logging.info(f"{RESET}Total de palabras procesadas en tesis: {O}{total_palabras}{RESET}")
+    logging.info(f"{RESET}Procesamiento finalizado en {B} {dt:.6f}s{RESET}")
+    logging.info(f"{RESET}Archivos generados: \n{OUT_INTEGRALES.resolve()}, \n{OUT_DERIVADAS.resolve()}, \n{OUT_TESIS.resolve()}, \n{OUT_LARGO.resolve()}, \n{OUT_TIEMPOS.resolve()}")
 
 if __name__ == "__main__":
     main()
