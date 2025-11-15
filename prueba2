@@ -12,7 +12,8 @@ from sympy.parsing.sympy_parser import parse_expr
 ESC = "\033["
 RESET = ESC + "0m"
 B = ESC + "36m"      # Cian para tiempos
-O = ESC + "1;32m"    # Verde claro para números
+G = ESC + "1;32m"    # Verde claro para números
+Y = ESC + "1;33m"
 R = ESC + "1;31m"
 GREY = "\x1b[37;20m" # Gris suave
 
@@ -105,7 +106,7 @@ def procesar_tesis(bd: BaseDeDatos, contenido: str, start: float):
         try:
             texto = ruta.read_text(encoding="utf-8", errors="ignore").strip()
         except Exception as e:
-            logging.error(f"No se puede leer la tesis desde archivo {ruta}: {e}")
+            logging.error(f"{R}No se puede leer la tesis desde archivo {ruta}: {e}")
             texto = f"[ERROR leyendo {ruta} : {e}]"
     else:
         texto = contenido.strip()
@@ -158,40 +159,41 @@ def procesar_tarea(bd: BaseDeDatos, tarea_tipo: str, contenido: str):
             ok, res, err = procesar_integral(contenido)
             dt = time.time() - start
             if ok:
-                linea = f"∫({contenido}) dx    =    {res}\n"
+                linea = f"∫({contenido}) dx = {res}\n"
             else:
                 linea = f"ERROR ∫({contenido}) -> {err}\n"
 
             with bd.lock_integrales:
                 with OUT_INTEGRALES.open("a", encoding="utf-8") as f:
                     f.write(linea)
-            logging.info(f"{RESET}Integral procesada (t ={B} {dt:.6f}s{RESET})")
+            logging.info(f"{RESET}Integral procesada: [{Y}{contenido}{RESET}] | (t = {B}{dt:.6f}s{RESET})")
 
         elif tarea_tipo == "DERIVADA":
             ok, res, err = procesar_derivada(contenido)
             dt = time.time() - start
             if ok:
-                linea = f"d/dx({contenido})    =    {res}\n"
+                linea = f"d/dx({contenido}) = {res}\n"
             else:
                 linea = f"ERROR d/dx({contenido}) -> {err}\n"
 
             with bd.lock_derivadas:
                 with OUT_DERIVADAS.open("a", encoding="utf-8") as f:
                     f.write(linea)
-            logging.info(f"{RESET}Derivada procesada (t =  {B} {dt:.6f}s{RESET})")
+            logging.info(f"{RESET}Derivada procesada: [{Y}{contenido}{RESET}] | (t = {B}{dt:.6f}s{RESET}) ")
         elif tarea_tipo == "TESIS":
             n_palabras, nuevo_total = procesar_tesis(bd, contenido, start)
             dt = time.time() - start
+            preview = contenido[:100] + ("..." if len(contenido) > 100 else "")
             logging.info(
-                f"{RESET}Tesis procesada (palabras ={O} {n_palabras}{RESET}, total = {O}{nuevo_total}{RESET}, t = {B} {dt:.6f}s{RESET})"      
+                f"\n{RESET}Tesis procesada: {preview}... | (palabras = {G}{n_palabras}{RESET}, total = {G}{nuevo_total}{RESET}, t = {B}{dt:.6f}s{RESET}) \n"
             )
 
         registrar_tiempo(bd, tarea_tipo, contenido, start, time.time())
 
     finally:
         bd.sem.release()
-
-
+        
+        
 # Lectura de demanda
 def leer_demanda(path: Path):
     tareas = []
@@ -267,8 +269,8 @@ def main():
     total_palabras = int(OUT_LARGO.read_text(encoding="utf-8").strip() or "0")
     
     logging.info(f"\n{RESET}Fin del procesador de tareas\n")
-    logging.info(f"\n{RESET}Total de tareas procesadas correctamente: {O}{tareas_ok}{RESET}")
-    logging.info(f"{RESET}Total de palabras procesadas en tesis: {O}{total_palabras}{RESET}")
+    logging.info(f"\n{RESET}Total de tareas procesadas correctamente: {G}{tareas_ok}{RESET}")
+    logging.info(f"{RESET}Total de palabras procesadas en tesis: {G}{total_palabras}{RESET}")
     logging.info(f"{RESET}Procesamiento finalizado en {B} {dt:.6f}s{RESET}")
     logging.info(f"{RESET}Archivos generados: \n{OUT_INTEGRALES.resolve()}, \n{OUT_DERIVADAS.resolve()}, \n{OUT_TESIS.resolve()}, \n{OUT_LARGO.resolve()}, \n{OUT_TIEMPOS.resolve()}")
 
